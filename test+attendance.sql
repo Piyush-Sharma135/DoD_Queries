@@ -95,156 +95,99 @@ ORDER BY
 
 ---------------------------------------------------------------------------------------------------------------------------------
 
-CBT_MST AS(
-select 
-    reg_no, student_name, new_batch, phase, test_name, 
-    test_category_name, test_date, completed, attemptedquestions, correctquestions, 
-    accuracy,
+extended AS (
 
-sum(case when subject_name ilike '%Physics%' then subject_marks end) as Physics,
-sum(case when subject_name ilike '%Chemistry%' then subject_marks end) as Chemistry,
-sum(case when subject_name ilike '%Maths%' or subject_name ilike '%Mathematics%' then subject_marks end) as Maths,
-sum(case when subject_name ilike '%Botany%' then subject_marks end) as Botany,
-sum(case when subject_name ilike '%Zoology%' then subject_marks end) as Zoology,
-sum(case when subject_name ilike '%Biology%' then subject_marks end) as Biology,
-sum(case when subject_name ilike '%Social Studies%' or subject_name ilike '%Social Science%' then subject_marks end) as SocialStudies,
-sum(case when subject_name ilike '%English%' then subject_marks end) as English,
-total_marks,max_marks
- 
-from
-
-(
-select 
-    reg_no,student_name, new_batch,
-    te._id AS "test_id", result_id, test_name, test_category_name, result_create_date::date,
-    STARTTIME::date as test_date, total_marks, subject_marks, nvl(qbg_subject_name,subject_name) AS "subject_name", max_marks,
-   test_rank, phase,categoryid, completed, attemptedquestions, correctquestions, accuracy
-
-FROM
-
-(select 
-    testid, studentid,userscore "total_marks",_id AS "result_id",
-    createdat AS "result_create_date", rank AS "test_rank" , 
-    completed, attemptedquestions, correctquestions,accuracy
-from hevo_results) as re
-
-JOIN
-
-(select 
-    _id, categoryid, 
-    name AS "test_name", createdat AS "test_create_date", 
-    STARTTIME, TOTALMARKS AS "max_marks", 
-    categorymodeids[0] "tcmid"  
-    from hevo_tests
-where 
-    type='Mock' and 
-    status='Active') as te
-on re.testid=te._id
-
-left join
-
-(select 
-    name "test_category_name",_id 
-from  test_categories) as tc
-on tc._id=te.categoryid
-
-JOIN
-
-(select 
-    _id,primarynumber 
-from users) as u
-on u._id=re.studentid
-
-JOIN
-
-(select 
-    reg_no,student_name,CLASS_RECORDED_MOBILE_NO,center,scheme,
+SELECT 
+    osh.reg_no, osh.student_name, hr.studentid, 
+    osh.gender, osh.pincode, osh.marks_in_10th,
     CASE 
-        WHEN batch ilike '29-%' then CONCAT('Vidyapeeth ',batch)
-        WHEN batch IS NOT NULL AND LEN(batch) > 0 THEN CONCAT('Vidyapeeth ', batch)
+        WHEN osh.batch ilike '29-%' then CONCAT('Vidyapeeth ',osh.batch)
+        WHEN osh.batch IS NOT NULL AND LEN(osh.batch) > 0 THEN CONCAT('Vidyapeeth ', osh.batch)
         END AS new_batch,
+   
+    ht.name as test_name, tc.name AS test_category_name, ht.starttime::date as Test_Date,
+    ht._id as test_id, hr._id as hevo_result_id, swr._id as swr_result_id, hr.rank AS Test_Rank,
+   
+    qsub.name AS subject_name, swr.userscore AS subject_marks, 
+   
+    hr.completed as completed, hr.attemptedquestions AS attempted_questions, hr.correctquestions AS correct_questions, hr.accuracy AS accuracy, 
+    hr.userscore as total_marks, ht.totalmarks AS Max_Marks
+    
+FROM 
+Offline.offline_students_humming osh 
 
-case 
-when length(batch)>5 and batch like '%LJ%' then 'Vidyapeeth 12th JEE 2024'
-when length(batch)>5 and batch like '%LN%' then 'Vidyapeeth 12th NEET 2024'
-when length(batch)>5 and batch like '%AJ%' then 'Vidyapeeth 11th JEE 2024'
-when length(batch)>5 and batch like '%AN%' then 'Vidyapeeth 11th NEET 2024'
-when length(batch)>5 and batch like '%PJ%' then 'Vidyapeeth Dropper JEE 2024'
-when length(batch)>5 and batch like '%YN%' then 'Vidyapeeth Dropper NEET 2024'
-when length(batch)>5 and batch like '%UF%' then 'Vidyapeeth 10th Foundation 2024'
-when length(batch)>5 and batch like '%NF%' then 'Vidyapeeth 9th Foundation 2024'
-when length(batch)<5 and batch like '%LJ%' then 'Classroom 12th JEE 2024'
-when length(batch)<5 and batch like '%LN%' then 'Classroom 12th NEET 2024'
-when length(batch)<5 and batch like '%AJ%' then 'Classroom 11th JEE 2024'
-when length(batch)<5 and batch like '%AN%' then 'Classroom 11th NEET 2024'
-when length(batch)<5 and batch like '%PJ%' then 'Classroom Dropper JEE 2024'
-when length(batch)<5 and batch like '%YN%' then 'Classroom Dropper NEET 2024'
-when length(batch)<5 and batch like '%UF%' then 'Classroom 10th Foundation 2024'
-when length(batch)<5 and batch like '%NF%' then 'Classroom 9th Foundation 2024'
-else course end as actual_course,
+LEFT JOIN users u 
+on osh.class_recorded_mobile_no = u.primarynumber
 
-case 
-    when course like '%D2%' or course like '%T2%' then '1'
-    when length(batch)<5 then substring(batch,3,1)
-    else substring(batch,6,1)
-end as phase,
+LEFT JOIN hevo_results hr
+on u._id = hr.studentid
 
-case
-    when center like '%Panchkula Vidyapeeth%' then 'Panchkula'
-    else center end as test_center
-from offline.offline_students_humming
+LEFT JOIN hevo_tests ht 
+ON hr.testid = ht._id 
+
+LEFT JOIN test_categories tc
+ON tc._id = ht.categoryid
+
+LEFT JOIN test_category_modes tcm
+ON ht.categorymodeids[0] = tcm._id
+
+LEFT JOIN pw_subjectwise_results swr
+ON hr._id = swr._id
+
+LEFT JOIN hevo_subjects hsub 
+ON swr.subject_id = hsub._id
+
+LEFT JOIN qbg.subjects qsub
+ON qsub.unique_id = swr.subject_id
+
+
 where 
-    center like '%Panchkula%') as hm
-on hm.CLASS_RECORDED_MOBILE_NO=u.primarynumber
+osh.center like '%Panchkula%' AND
 
-join
+ht.type = 'Mock' AND
+ht.status = 'Active' AND
 
-(select 
-    userscore AS "subject_marks", _id, subject_id 
-from pw_subjectwise_results_temp) as sbr
-on sbr._id=re.result_id
+tcm.type = 'Offline'
+),
 
-left join
+pivot_result AS (
 
-(select _id,name "subject_name" 
-from subjects) as sub
-on sub._id=sbr.subject_id
-
-left join
-
-(select unique_id,name "qbg_subject_name" 
-from qbg.subjects) as qsub
-on qsub.unique_id=sbr.subject_id
+SELECT  
+    REG_NO, INITCAP(Student_Name) AS student_name, new_batch, Test_Name, test_date,
+    gender,  COALESCE(pincode::int, 0) AS pincode,  COALESCE(marks_in_10th::int, 0) AS marks_in_10th,
+    COALESCE(physics,0)as physics, COALESCE(chemistry,0) as chemistry, COALESCE(maths,0) as maths,
+    COALESCE(botany,0) as botany, COALESCE(zoology,0) as zoology,
+    COALESCE(biology,0) as biology, COALESCE(English,0) as English, COALESCE(SST,0) as SST, COALESCE(MAT,0) as MAT,
+    completed, Attempted_Questions, correct_questions, Accuracy,
+    total_marks, max_marks, Test_Rank
+    FROM
+(
+    SELECT 
+        reg_no, student_name, new_Batch, test_name, test_date,
+        gender, pincode, marks_in_10th,
+        subject_name, subject_marks, 
+        completed, attempted_questions, correct_questions, accuracy,
+        total_marks, max_marks, Test_Rank
+    FROM extended
 )
+PIVOT 
+(max(subject_marks) FOR subject_name in ('Physics', 'Chemistry', 'Maths', 'Botany', 'Zoology', 'Biology', 'English' ,'SST', 'MAT'))
 
-group by 1,2,3,4,5,6,7,8,9,10,11,20,21
 )
-
 
 select DISTINCT
-    student_name, reg_no, REPLACE(batch_name, 'Vidyapeeth ', '') as batch_name,
-    REPLACE(test_name, 'Panchkula ', '') AS test_name, test_date, 
+    student_name, reg_no, REPLACE(batch_name, 'Vidyapeeth ', '') as batch_name, REPLACE(test_name, 'Panchkula ', '') AS test_name, test_date, 
     ROUND(sum(CASE WHEN present_absent ='P' THEN 1 ELSE 0 END) OVER (partition by schedule_reg_no,test_date)*1.0/count(schedule_reg_no) OVER(partition by schedule_reg_no,test_date),3)*100 AS att_pct_till_test_date,
-    attemptedquestions, correctquestions, accuracy, total_marks,
-    physics, chemistry, maths, botany, ZOOLOGY, Biology, english,SocialStudies
+    total_marks, max_marks, completed, attempted_questions,correct_questions, accuracy,
+    Physics, Chemistry, Maths, Botany, ZOOLOGY, Biology, English, SST, MAT,
+    gender, pincode, marks_in_10th
 FROM
-CBT_MST left join master
-ON CBT_MST.reg_no = master.SCHEDULE_REG_NO AND
-UPPER(CBT_MST.new_batch) = UPPER(master.batch_name)
+pivot_result left join master
+ON pivot_result.reg_no = master.SCHEDULE_REG_NO AND
+UPPER(pivot_result.new_batch) = UPPER(master.batch_name)
 WHERE
     schedule_date <= test_date::DATE
 ORDER BY 
     batch_name,
-    student_name,
+    reg_no,
     test_date DESC
-
-
-
-
-
-
-
-
-
-
-
